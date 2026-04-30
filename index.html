@@ -393,8 +393,6 @@ function dynDesc(desc,typeIdx) {
   var repl=typeIdx===1?fmtPace(mp-25)+'–'+fmtPace(mp-15)+'/mi':fmtPace(mp-4)+'–'+fmtPace(mp+2)+'/mi';
   return desc.replace(/\d+:\d{2}[–\-]\d+:\d{2}\/mi/g,repl);
 }
-var PLAN_START = getPlanStart();
-var RACE_DATE  = getRaceDate();
 
 // ── Training data ─────────────────────────────────────────────
 // [num, dateStr, phaseIdx, weekMiles, [[miles, typeIdx, desc], ...]]
