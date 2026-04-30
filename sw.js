@@ -1,4 +1,4 @@
-var CACHE = 'marathon-v3';
+var CACHE = 'marathon-v4';
 var FILES = ['./', './index.html', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', function(e) {
