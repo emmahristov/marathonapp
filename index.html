@@ -966,29 +966,20 @@ function initSupabase() {
 }
 
 async function checkAuth() {
-  var hasLocal = Object.keys(state.completed).length || Object.keys(state.logs).length;
-  if (hasLocal) showApp();
-
-  // Timeout fallback — show auth after 5s if Supabase hasn't responded
-  var resolved = false;
-  var timeout = setTimeout(function() {
-    if (!resolved) { if (hasLocal) { /* already shown */ } else showAuth(); }
-  }, 5000);
-
   var res = await sb.auth.getSession();
-  resolved = true; clearTimeout(timeout);
   var session = res.data.session;
   if (session) {
     currentUser = session.user;
     var meta = (session.user.user_metadata)||{};
     if (meta.goalTime) { settings.goalTime = meta.goalTime; saveSettings(); }
     if (meta.raceDate) { settings.raceDate = meta.raceDate; saveSettings(); }
-    if (!hasLocal) showApp();
-    else renderAll();
-    loadProfile().then(function() { updateUserPill(); renderAll(); });
-    if (!hasLocal) loadFromSupabase().then(function() { renderAll(); });
+    showApp();
+    loadProfile().then(function() { updateUserPill(); });
+    if (!Object.keys(state.completed).length && !Object.keys(state.logs).length) {
+      loadFromSupabase().then(function() { renderAll(); });
+    }
   } else {
-    if (!hasLocal) showAuth();
+    showAuth();
   }
 }
 
