@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1a18">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Marathon">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <title>NYC Marathon Training</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --base:#5DCAA5; --build:#85B7EB; --peak:#F0997B; --taper:#EF9F27;
+      --base-bg:#E8F8F2; --build-bg:#E6F1FB; --peak-bg:#FDF0EB; --taper-bg:#FEF4E4;
+      --bg:#f5f5f3; --card:#ffffff; --text:#1a1a18; --muted:#888; --border:#e0e0da;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+    html,body { height:100%; overflow:hidden; }
+    body {
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      background:var(--bg); color:var(--text);
+    }
+    .app { display:flex; flex-direction:column; height:100vh; height:100dvh; }
+
+    /* Header */
+    .header {
+      background:var(--text); color:#fff; flex-shrink:0;
+      padding:14px 20px calc(14px + env(safe-area-inset-bottom,0px)*0);
+      padding-top:calc(14px + env(safe-area-inset-top,0px));
+      display:flex; justify-content:space-between; align-items:flex-end;
+    }
+    .header-title { font-size:17px; font-weight:600; letter-spacing:-0.3px; }
+    .header-sub   { font-size:12px; opacity:0.55; margin-top:2px; }
+    .header-right { text-align:right; }
+    .header-date  { font-size:12px; opacity:0.55; }
+    .header-wk    { font-size:13px; font-weight:500; margin-top:2px; }
+
+    /* Scroll area */
+    .main { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+    .tab  { display:none; padding:16px 16px 40px; }
+    .tab.active { display:block; }
+
+    /* Bottom nav */
+    .nav {
+      display:flex; background:var(--card); border-top:1px solid var(--border);
+      padding-bottom:env(safe-area-inset-bottom,0px); flex-shrink:0;
+    }
+    .nav-btn {
+      flex:1; display:flex; flex-direction:column; align-items:center;
+      justify-content:center; padding:10px 0; border:none; background:none;
+      cursor:pointer; color:var(--muted); font-size:10px; font-family:inherit;
+      gap:3px; min-height:56px; transition:color 0.15s;
+    }
+    .nav-btn.active { color:var(--text); font-weight:600; }
+    .nav-icon { font-size:22px; line-height:1; }
+
+    /* Card */
+    .card {
+      background:var(--card); border-radius:14px; border:1px solid var(--border);
+      padding:16px; margin-bottom:12px;
+    }
+    .section-label {
+      font-size:11px; font-weight:600; letter-spacing:0.7px; text-transform:uppercase;
+      color:var(--muted); margin-bottom:10px;
+    }
+
+    /* Run rows */
+    .run-item {
+      display:flex; align-items:center; gap:12px;
+      padding:10px 0; border-bottom:1px solid var(--border);
+    }
+    .run-item:last-child { border-bottom:none; }
+    .run-item.hi { margin:0 -16px; padding:10px 16px; border-radius:8px; }
+    .run-dot  { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .run-info { flex:1; min-width:0; }
+    .run-mi   { font-size:13px; font-weight:600; }
+    .run-day  { font-weight:400; color:var(--muted); font-size:11px; margin-left:4px; }
+    .run-desc { font-size:12px; color:var(--muted); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .run-check {
+      width:30px; height:30px; border-radius:50%; border:2px solid var(--border);
+      background:none; cursor:pointer; display:flex; align-items:center;
+      justify-content:center; font-size:13px; flex-shrink:0;
+      transition:all 0.15s; color:transparent;
+    }
+    .run-check.done { color:#fff; }
+
+    /* Today tab */
+    .today-hero { border-radius:16px; padding:20px; margin-bottom:12px; }
+    .today-type  { font-size:12px; font-weight:600; opacity:0.7; text-transform:uppercase; letter-spacing:0.6px; margin-bottom:4px; }
+    .today-miles { font-size:42px; font-weight:800; line-height:1; margin-bottom:6px; }
+    .today-miles span { font-size:18px; font-weight:500; opacity:0.7; }
+    .today-desc  { font-size:14px; opacity:0.85; line-height:1.5; margin-bottom:16px; }
+    .check-btn {
+      display:flex; align-items:center; justify-content:center; gap:8px;
+      width:100%; padding:14px; border-radius:12px; border:none;
+      font-size:15px; font-weight:600; cursor:pointer; font-family:inherit;
+      transition:opacity 0.15s;
+    }
+    .check-btn:active { opacity:0.75; }
+
+    .center-card { text-align:center; padding:36px 20px; }
+    .big-emoji   { font-size:52px; margin-bottom:14px; }
+    .center-title{ font-size:22px; font-weight:700; margin-bottom:6px; }
+    .center-sub  { font-size:14px; color:var(--muted); line-height:1.5; }
+    .cdnum { font-size:72px; font-weight:800; line-height:1; }
+    .cdunit{ font-size:16px; color:var(--muted); margin-top:4px; }
+
+    .race-hero {
+      border-radius:16px; padding:36px 20px; text-align:center;
+      background:linear-gradient(135deg,#EF9F27,#F0997B); color:#fff; margin-bottom:12px;
+    }
+
+    /* Plan tab */
+    .wk-card {
+      background:var(--card); border:1px solid var(--border); border-radius:12px;
+      padding:14px 16px; margin-bottom:8px; cursor:pointer;
+      transition:background 0.1s; user-select:none;
+    }
+    .wk-card:active { background:#f0f0ed; }
+    .wk-card.exp { border-radius:12px 12px 0 0; margin-bottom:0; border-bottom-color:transparent; }
+    .wk-head  { display:flex; justify-content:space-between; align-items:flex-start; }
+    .wk-num   { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.6px; color:var(--muted); margin-bottom:3px; }
+    .wk-row   { display:flex; align-items:center; gap:7px; }
+    .wk-date  { font-size:16px; font-weight:600; }
+    .phase-chip {
+      font-size:10px; font-weight:600; padding:2px 8px; border-radius:20px;
+      text-transform:uppercase; letter-spacing:0.4px;
+    }
+    .wk-right { text-align:right; }
+    .wk-mi    { font-size:17px; font-weight:700; }
+    .wk-runs  { font-size:12px; color:var(--muted); margin-top:2px; }
+    .wk-pbar  { height:3px; background:var(--border); border-radius:2px; margin-top:10px; overflow:hidden; }
+    .wk-pfill { height:100%; border-radius:2px; transition:width 0.4s; }
+
+    .wk-detail {
+      background:var(--card); border:1px solid var(--border); border-top:none;
+      border-radius:0 0 12px 12px; padding:0 16px 14px; margin-bottom:8px; display:none;
+    }
+    .wk-detail.open { display:block; }
+    .wk-tip {
+      font-size:13px; color:#666; padding:10px 12px; background:var(--bg);
+      border-radius:8px; margin-bottom:10px; line-height:1.55;
+    }
+
+    /* Stats tab */
+    .stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
+    .stat-card  { background:var(--card); border-radius:12px; border:1px solid var(--border); padding:14px; }
+    .stat-label { font-size:11px; color:var(--muted); margin-bottom:4px; font-weight:500; }
+    .stat-val   { font-size:24px; font-weight:700; }
+    .stat-sub   { font-size:11px; color:var(--muted); margin-top:2px; }
+    .ring-wrap  { display:flex; justify-content:center; padding:24px 0; }
+
+    .pb-row  { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+    .pb-name { width:44px; font-size:12px; color:var(--muted); }
+    .pb-track{ flex:1; height:8px; background:var(--border); border-radius:4px; overflow:hidden; }
+    .pb-fill { height:100%; border-radius:4px; transition:width 0.4s; }
+    .pb-ct   { font-size:12px; color:var(--muted); width:36px; text-align:right; }
+
+    .pace-row { display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid var(--border); font-size:13px; }
+    .pace-row:last-child { border-bottom:none; }
+    .pdot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+
+    /* Install banner */
+    .install-bar {
+      display:none; background:var(--text); color:#fff; border-radius:12px;
+      padding:12px 16px; margin-bottom:12px; align-items:center; gap:12px;
+    }
+    .install-bar.show { display:flex; }
+    .install-btn {
+      margin-left:auto; background:#5DCAA5; color:#fff; border:none;
+      border-radius:8px; padding:8px 14px; font-size:13px; font-weight:600;
+      cursor:pointer; font-family:inherit; white-space:nowrap;
+    }
+
+    /* Run log */
+    .log-btn {
+      width:28px; height:28px; border-radius:50%; border:1.5px solid var(--border);
+      background:none; cursor:pointer; display:flex; align-items:center;
+      justify-content:center; font-size:12px; flex-shrink:0; color:var(--muted);
+      transition:all 0.15s; margin-right:-4px;
+    }
+    .log-btn.logged { border-color:#5DCAA5; color:#5DCAA5; }
+    .log-badge { font-size:11px; color:#5DCAA5; font-weight:500; margin-top:2px; }
+    .log-link {
+      display:block; width:100%; padding:9px 0 2px; background:none; border:none;
+      font-size:13px; color:var(--muted); cursor:pointer; text-align:center;
+      font-family:inherit; letter-spacing:0.1px;
+    }
+    .actual-badge {
+      font-size:12px; color:#5DCAA5; font-weight:500; margin-top:6px;
+      padding:6px 10px; background:rgba(93,202,165,0.12); border-radius:8px; display:inline-block;
+    }
+
+    /* Bottom sheet */
+    .overlay {
+      position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:100;
+      display:none; backdrop-filter:blur(2px);
+    }
+    .overlay.open { display:block; }
+    .sheet {
+      position:fixed; bottom:0; left:0; right:0; background:var(--card);
+      border-radius:20px 20px 0 0; padding:20px 20px calc(24px + env(safe-area-inset-bottom,0px));
+      z-index:101; transform:translateY(100%); transition:transform 0.3s cubic-bezier(.32,.72,0,1);
+      max-width:520px; margin:0 auto;
+    }
+    .sheet.open { transform:translateY(0); }
+    .sheet-handle { width:36px; height:4px; background:var(--border); border-radius:2px; margin:0 auto 18px; }
+    .sheet-title { font-size:16px; font-weight:600; margin-bottom:18px; }
+    .field-row   { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+    .field-group { margin-bottom:14px; }
+    .field-label { font-size:12px; font-weight:600; color:var(--muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.5px; }
+    .field-input {
+      width:100%; padding:12px 13px; border:1.5px solid var(--border); border-radius:10px;
+      font-size:16px; font-family:inherit; background:var(--bg); color:var(--text); outline:none;
+      transition:border-color 0.15s; -webkit-appearance:none;
+    }
+    .field-input:focus { border-color:#5DCAA5; }
+    .sheet-btns { display:flex; gap:10px; margin-top:4px; }
+    .btn-save {
+      flex:1; padding:14px; background:#5DCAA5; color:#fff; border:none; border-radius:12px;
+      font-size:15px; font-weight:600; cursor:pointer; font-family:inherit;
+    }
+    .btn-cancel {
+      padding:14px 18px; background:var(--bg); color:var(--muted); border:1.5px solid var(--border);
+      border-radius:12px; font-size:15px; cursor:pointer; font-family:inherit;
+    }
+    .btn-clear {
+      padding:14px; background:none; color:#F0997B; border:1.5px solid #F0997B40;
+      border-radius:12px; font-size:13px; cursor:pointer; font-family:inherit;
+    }
+    .btn-strava {
+      width:100%; padding:11px; background:#FC4C02; color:#fff; border:none;
+      border-radius:10px; font-size:13px; font-weight:600; cursor:pointer;
+      font-family:inherit; display:flex; align-items:center; justify-content:center; gap:7px;
+      margin-bottom:14px;
+    }
+    .strava-chip {
+      display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600;
+      color:#FC4C02; background:#FFF0EB; border:1px solid #FC4C0240; border-radius:20px;
+      padding:4px 10px;
+    }
+
+    /* Auth screen */
+    .auth-screen {
+      position:fixed; inset:0; background:var(--bg); z-index:200;
+      display:flex; align-items:center; justify-content:center; padding:24px;
+    }
+    .auth-screen.hidden { display:none; }
+    .auth-box { width:100%; max-width:360px; }
+    .auth-logo {
+      width:56px; height:56px; background:var(--text); border-radius:14px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:28px; font-weight:800; color:#5DCAA5; margin:0 auto 12px;
+    }
+    .auth-tabs {
+      display:flex; background:var(--border); border-radius:10px;
+      padding:3px; margin-bottom:20px;
+    }
+    .auth-tab {
+      flex:1; padding:8px; border:none; border-radius:8px; font-size:14px;
+      font-weight:500; cursor:pointer; font-family:inherit; transition:all 0.15s;
+    }
+    .auth-tab.active { background:var(--card); color:var(--text); }
+    .auth-tab:not(.active) { background:transparent; color:var(--muted); }
+    .auth-error { font-size:13px; color:#F0997B; margin-bottom:12px; display:none; }
+
+    /* User pill in header */
+    .user-pill {
+      display:flex; align-items:center; gap:6px; cursor:pointer;
+      background:rgba(255,255,255,0.12); border-radius:20px; padding:4px 10px 4px 4px;
+      border:none; color:#fff; font-family:inherit; font-size:12px;
+    }
+    .user-avatar {
+      width:22px; height:22px; border-radius:50%; background:#5DCAA5;
+      display:flex; align-items:center; justify-content:center;
+      font-size:10px; font-weight:700; color:#1a1a18; flex-shrink:0;
+    }
+
+    /* Friends feed */
+    .friend-row {
+      display:flex; align-items:center; gap:12px;
+      padding:10px 0; border-bottom:1px solid var(--border);
+    }
+    .friend-row:last-child { border-bottom:none; }
+    .friend-avatar {
+      width:34px; height:34px; border-radius:50%; flex-shrink:0;
+      display:flex; align-items:center; justify-content:center;
+      font-size:12px; font-weight:700; color:#fff;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Auth screen -->
+<div class="auth-screen" id="auth-screen">
+  <div class="auth-box">
+    <div style="text-align:center;margin-bottom:28px;">
+      <div class="auth-logo">M</div>
+      <div style="font-size:20px;font-weight:700;">NYC Marathon</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:3px;">3:40 Training Plan</div>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="auth-tab-in" onclick="switchAuthMode('in')">Sign in</button>
+      <button class="auth-tab" id="auth-tab-up" onclick="switchAuthMode('up')">Sign up</button>
+    </div>
+    <div id="auth-name-wrap" style="display:none;margin-bottom:14px;">
+      <div class="field-label">Your name</div>
+      <input class="field-input" id="auth-name" type="text" placeholder="Emma">
+    </div>
+    <div style="margin-bottom:14px;">
+      <div class="field-label">Email</div>
+      <input class="field-input" id="auth-email" type="email" placeholder="you@example.com" inputmode="email">
+    </div>
+    <div style="margin-bottom:20px;">
+      <div class="field-label">Password</div>
+      <input class="field-input" id="auth-password" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')handleAuth()">
+    </div>
+    <div class="auth-error" id="auth-error"></div>
+    <button class="btn-save" id="auth-submit" onclick="handleAuth()" style="width:100%">Sign in</button>
+    <div id="auth-confirm" style="display:none;text-align:center;font-size:13px;color:var(--muted);margin-top:16px;line-height:1.5;">
+      ✅ Check your email to confirm your account, then sign in.
+    </div>
+  </div>
+</div>
+
+<div class="app" id="app" style="display:none">
+  <header class="header">
+    <div>
+      <div class="header-title">NYC Marathon Training</div>
+      <div class="header-sub" id="header-sub"></div>
+    </div>
+    <div class="header-right" id="hdr-right"></div>
+    <button class="user-pill" id="user-pill" onclick="doSignOut()" style="display:none">
+      <div class="user-avatar" id="user-avatar"></div>
+      <span id="user-name-label"></span>
+    </button>
+  </header>
+
+  <main class="main">
+    <div class="tab active" id="tab-today"></div>
+    <div class="tab"        id="tab-plan"></div>
+    <div class="tab"        id="tab-stats"></div>
+    <div class="tab"        id="tab-strava"></div>
+  </main>
+
+  <nav class="nav">
+    <button class="nav-btn active" id="nav-today" onclick="switchTab('today')">
+      <span class="nav-icon">🏃</span><span>Today</span>
+    </button>
+    <button class="nav-btn" id="nav-plan" onclick="switchTab('plan')">
+      <span class="nav-icon">📅</span><span>Plan</span>
+    </button>
+    <button class="nav-btn" id="nav-stats" onclick="switchTab('stats')">
+      <span class="nav-icon">📊</span><span>Stats</span>
+    </button>
+    <button class="nav-btn" id="nav-strava" onclick="switchTab('strava')">
+      <span class="nav-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg></span>
+      <span>Strava</span>
+    </button>
+  </nav>
+</div>
+
+<script>
+// ── Constants ─────────────────────────────────────────────────
+var PC  = ['#5DCAA5','#85B7EB','#F0997B','#EF9F27'];
+var PL  = ['#E8F8F2','#E6F1FB','#FDF0EB','#FEF4E4'];
+var PN  = ['Base','Build','Peak','Taper'];
+var PT  = [
+  'All easy aerobic miles. Every run fully conversational — you\'re laying the foundation.',
+  'Tempo and marathon pace work begin. Keep quality sessions controlled and purposeful.',
+  'Highest mileage weeks, capped at 46 miles. Long runs with marathon-pace miles build race confidence.',
+  'Trust the training — resist adding miles. Fresh legs beat extra workouts every time.'
+];
+var TC  = ['#9FE1CB','#85B7EB','#F0997B','#5DCAA5'];
+var TL  = ['Easy','Tempo','Marathon Pace','Long Run'];
+var RUN_DAYS   = [1,2,3,4,6];
+var DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function getPlanStart() {
+  var rd=getRaceDate();
+  var d=new Date(rd.getTime()-26*7*86400000);
+  var dow=d.getDay();
+  d.setDate(d.getDate()+(dow===0?-6:1-dow)); // snap to Monday
+  return d;
+}
+function getRaceDate()  { return new Date((settings.raceDate||'2026-11-01')+'T00:00:00'); }
+function wkDateStr(wi)  { var d=getPlanStart(); d.setDate(d.getDate()+wi*7); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+function dynDesc(desc,typeIdx) {
+  if (typeIdx!==1&&typeIdx!==2) return desc;
+  var mp=goalPaceSecs();
+  var repl=typeIdx===1?fmtPace(mp-25)+'–'+fmtPace(mp-15)+'/mi':fmtPace(mp-4)+'–'+fmtPace(mp+2)+'/mi';
+  return desc.replace(/\d+:\d{2}[–\-]\d+:\d{2}\/mi/g,repl);
+}
+var PLAN_START = getPlanStart();
+var RACE_DATE  = getRaceDate();
+
+// ── Training data ─────────────────────────────────────────────
+// [num, dateStr, phaseIdx, weekMiles, [[miles, typeIdx, desc], ...]]
+var wks = [
+[1,'Apr 27',0,25,[[4,0,'4 miles easy'],[4,0,'4 miles easy'],[4,0,'4 miles easy'],[4,0,'4 miles easy'],[9,3,'9 miles long run']]],
+[2,'May 4',0,28,[[4,0,'4 miles easy'],[5,0,'5 miles easy'],[4,0,'4 miles easy'],[5,0,'5 miles easy'],[10,3,'10 miles long run']]],
+[3,'May 11',0,31,[[5,0,'5 miles easy'],[5,0,'5 miles easy'],[4,0,'4 miles easy'],[5,0,'5 miles easy'],[12,3,'12 miles long run']]],
+[4,'May 18',0,23,[[3,0,'3 miles easy'],[4,0,'4 miles easy'],[4,0,'4 miles easy'],[4,0,'4 miles easy'],[8,3,'8 miles long run — recovery week']]],
+[5,'May 25',0,33,[[5,0,'5 miles easy'],[6,0,'6 miles easy'],[5,0,'5 miles easy'],[5,0,'5 miles easy'],[12,3,'12 miles long run']]],
+[6,'Jun 1',0,35,[[5,0,'5 miles easy'],[6,0,'6 miles easy'],[5,0,'5 miles easy'],[6,0,'6 miles easy'],[13,3,'13 miles long run']]],
+[7,'Jun 8',0,37,[[5,0,'5 miles easy'],[6,0,'6 miles easy'],[6,0,'6 miles easy'],[6,0,'6 miles easy'],[14,3,'14 miles long run']]],
+[8,'Jun 15',1,28,[[4,0,'4 miles easy'],[5,0,'5 miles easy'],[4,0,'4 miles easy'],[4,0,'4 miles easy'],[11,3,'11 miles long run — recovery week']]],
+[9,'Jun 22',1,38,[[6,0,'6 miles easy'],[8,1,'8 miles: 2 warm-up + 4 tempo (7:55–8:10/mi) + 2 cool-down'],[5,0,'5 miles easy'],[5,0,'5 miles easy'],[14,3,'14 miles long run']]],
+[10,'Jun 29',1,39,[[6,0,'6 miles easy'],[8,1,'8 miles: 2 warm-up + 4 tempo + 2 cool-down'],[5,0,'5 miles easy'],[5,0,'5 miles easy'],[15,3,'15 miles long run']]],
+[11,'Jul 6',1,31,[[5,0,'5 miles easy'],[7,1,'7 miles: 2 warm-up + 3 tempo + 2 cool-down'],[4,0,'4 miles easy'],[4,0,'4 miles easy'],[11,3,'11 miles long run — recovery week']]],
+[12,'Jul 13',1,40,[[6,0,'6 miles easy'],[9,1,'9 miles: 2 warm-up + 5 tempo + 2 cool-down'],[6,0,'6 miles easy'],[4,0,'4 miles easy'],[15,3,'15 miles long run']]],
+[13,'Jul 20',1,42,[[6,0,'6 miles easy'],[9,1,'9 miles: 2 warm-up + 5 tempo + 2 cool-down'],[6,0,'6 miles easy'],[5,0,'5 miles easy'],[16,3,'16 miles long run']]],
+[14,'Jul 27',1,33,[[5,0,'5 miles easy'],[7,1,'7 miles: 2 warm-up + 3 tempo + 2 cool-down'],[5,0,'5 miles easy'],[4,0,'4 miles easy'],[12,3,'12 miles long run — recovery week']]],
+[15,'Aug 3',1,42,[[6,0,'6 miles easy'],[9,1,'9 miles: 2 warm-up + 5 tempo + 2 cool-down'],[6,0,'6 miles easy'],[5,0,'5 miles easy'],[16,3,'16 miles long run']]],
+[16,'Aug 10',1,44,[[6,0,'6 miles easy'],[9,2,'9 miles: 2 warm-up + 5 @ marathon pace (8:20–8:25/mi) + 2 cool-down'],[6,0,'6 miles easy'],[5,0,'5 miles easy'],[18,3,'18 miles long run']]],
+[17,'Aug 17',1,35,[[5,0,'5 miles easy'],[7,2,'7 miles: 2 warm-up + 3 @ marathon pace + 2 cool-down'],[5,0,'5 miles easy'],[5,0,'5 miles easy'],[13,3,'13 miles long run — recovery week']]],
+[18,'Aug 24',1,44,[[6,0,'6 miles easy'],[9,2,'9 miles: 2 warm-up + 5 @ marathon pace + 2 cool-down'],[6,0,'6 miles easy'],[5,0,'5 miles easy'],[18,3,'18 miles long run']]],
+[19,'Aug 31',2,45,[[6,0,'6 miles easy'],[9,2,'9 miles: 2 warm-up + 6 @ marathon pace + 1 cool-down'],[7,0,'7 miles easy'],[5,0,'5 miles easy'],[18,3,'18 miles long run — last 6 miles at marathon pace']]],
+[20,'Sep 7',2,46,[[7,0,'7 miles easy'],[9,2,'9 miles: 2 warm-up + 6 @ marathon pace + 1 cool-down'],[7,0,'7 miles easy'],[4,0,'4 miles easy'],[19,3,'19 miles — last 8 miles at marathon pace (race simulation)']]],
+[21,'Sep 14',2,46,[[7,0,'7 miles easy'],[9,2,'9 miles: 2 warm-up + 6 @ marathon pace + 1 cool-down'],[7,0,'7 miles easy'],[4,0,'4 miles easy'],[19,3,'19 miles — last 10 miles at marathon pace']]],
+[22,'Sep 21',2,38,[[6,0,'6 miles easy'],[8,2,'8 miles: 2 warm-up + 4 @ marathon pace + 2 cool-down'],[5,0,'5 miles easy'],[4,0,'4 miles easy'],[15,3,'15 miles long run — step-back week']]],
+[23,'Sep 28',3,34,[[6,0,'6 miles easy'],[7,2,'7 miles: 2 warm-up + 3 @ marathon pace + 2 cool-down'],[5,0,'5 miles easy'],[4,0,'4 miles easy'],[12,3,'12 miles long run']]],
+[24,'Oct 5',3,24,[[5,0,'5 miles easy'],[6,2,'6 miles: 1.5 warm-up + 3 @ marathon pace + 1.5 cool-down'],[4,0,'4 miles easy'],[3,0,'3 miles easy'],[6,3,'6 miles easy']]],
+[25,'Oct 12',3,18,[[4,0,'4 miles easy'],[5,2,'5 miles: 1.5 warm-up + 2 @ marathon pace + 1.5 cool-down'],[3,0,'3 miles easy'],[3,0,'3 miles easy'],[3,0,'3 miles easy — trust the taper']]],
+[26,'Oct 19',3,9,[[4,0,'4 miles easy with strides'],[3,2,'3 miles: 1 warm-up + 1 @ marathon pace + 1 cool-down'],[2,0,'2 miles very easy'],[26,3,'RACE DAY — NYC Marathon! Goal: 3:40:00']]],
+];
+
+// ── State ─────────────────────────────────────────────────────
+var state = { completed:{}, expandedWeek:-1, logs:{}, adjusted:{} };
+var settings = { goalTime: '3:40:00', raceDate: '2026-11-01' };
+function loadSettings() {
+  try { var s = localStorage.getItem('marathon-settings'); if (s) settings = Object.assign(settings, JSON.parse(s)); } catch(e) {}
+}
+function saveSettings() { try { localStorage.setItem('marathon-settings', JSON.stringify(settings)); } catch(e) {} }
+function goalPaceSecs() {
+  var parts = settings.goalTime.split(':');
+  var totalSecs = parseInt(parts[0])*3600 + parseInt(parts[1])*60 + (parseInt(parts[2])||0);
+  return Math.round(totalSecs / 26.2);
+}
+function fmtPace(s) { s=Math.round(s); return Math.floor(s/60)+':'+(s%60<10?'0':'')+s%60; }
+var currentTab = 'today';
+var deferredInstall = null;
+var logCtx = null; // {wi, ri} currently open in sheet
+
+function loadState() {
+  try {
+    var s = localStorage.getItem('marathon-v2');
+    if (s) { var p=JSON.parse(s); state.completed=p.completed||{}; state.expandedWeek=p.expandedWeek!=null?p.expandedWeek:-1; state.logs=p.logs||{}; state.adjusted=p.adjusted||{}; }
+  } catch(e) {}
+}
+function saveState() { try { localStorage.setItem('marathon-v2',JSON.stringify(state)); } catch(e) {} }
+
+function isCompleted(wi,ri) { return !!state.completed[wi+'-'+ri]; }
+function toggleRun(wi,ri) {
+  var k=wi+'-'+ri;
+  if (state.completed[k]) return;
+  state.completed[k]=true;
+  saveState(); syncRun(wi,ri); renderAll();
+}
+function weekDone(wi) {
+  return wks[wi][4].reduce(function(n,r,ri){ return n+(isCompleted(wi,ri)?1:0); },0);
+}
+
+// ── Date helpers ──────────────────────────────────────────────
+function now() { return new Date(); }
+function diffDays(a,b) { return Math.floor((b-a)/86400000); }
+function currentWeekIdx() {
+  var d=diffDays(getPlanStart(),now());
+  if (d<0) return -1;
+  var i=Math.floor(d/7);
+  return i>=26?-2:i;
+}
+function todayRunIdx() { return RUN_DAYS.indexOf(now().getDay()); }
+
+// ── Navigation ────────────────────────────────────────────────
+function switchTab(tab) {
+  currentTab=tab;
+  ['today','plan','stats','strava'].forEach(function(t){
+    document.getElementById('tab-'+t).classList.toggle('active',t===tab);
+    document.getElementById('nav-'+t).classList.toggle('active',t===tab);
+  });
+  renderTab(tab);
+}
+
+// ── Shared run row ────────────────────────────────────────────
+function runRow(wi,ri,showDay,highlight) {
+  var run=wks[wi][4][ri];
+  var isRace=run[2].startsWith('RACE');
+  var done=isCompleted(wi,ri);
+  var log=state.logs[wi+'-'+ri];
+  var col=PC[wks[wi][2]];
+  var dl='';
+  var rawDesc=dynDesc(run[2],run[1]);
+  var desc=rawDesc.length>58?rawDesc.slice(0,58)+'…':rawDesc;
+  var plannedMi=getPlannedMiles(wi,ri);
+  var origMi=run[0];
+  var mi=isRace?'26.2':plannedMi;
+  var adjTag=(!isRace&&plannedMi!==origMi)?'<span style="font-size:10px;color:'+(plannedMi>origMi?'#5DCAA5':'#F0997B')+';margin-left:3px">'+(plannedMi>origMi?'↑':'↓')+Math.abs(plannedMi-origMi)+'</span>':'';
+  var checkStyle=done?'style="background:'+col+';border-color:'+col+'"':'';
+  var dotSize=highlight?'width:12px;height:12px;':'';
+  var logBadge=log?'<div class="log-badge">'
+    +(log.miles?log.miles+' mi':'')+(log.miles&&log.pace?' · ':'')+( log.pace?log.pace+'/mi':'')
+    +(log.note?' · '+log.note.slice(0,22)+(log.note.length>22?'…':''):'')+'</div>':'';
+  return '<div class="run-item'+(highlight?' hi':'')+'"'+(highlight?' style="background:'+PL[wks[wi][2]]+';"':'')+'>'
+    +'<div class="run-dot" style="background:'+TC[run[1]]+';'+dotSize+'"></div>'
+    +'<div class="run-info"><div class="run-mi">'+mi+' mi'+(adjTag||'')+'</div><div class="run-desc">'+desc+'</div>'+logBadge+'</div>'
+    +(done?'<div style="color:#5DCAA5;font-size:18px;flex-shrink:0;">✓</div>':'')
+    +'</div>';
+}
+
+// ── Goal settings ─────────────────────────────────────────────
+function toggleGoalEdit() {
+  var el = document.getElementById('goal-edit');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+function saveGoalSettings() {
+  var t = document.getElementById('edit-goal-time').value.trim();
+  var d = document.getElementById('edit-race-date').value;
+  if (t) settings.goalTime = t;
+  if (d) settings.raceDate = d;
+  saveSettings();
+  if (sb && currentUser) sb.auth.updateUser({ data: { goalTime: settings.goalTime, raceDate: settings.raceDate } });
+  toggleGoalEdit();
+  renderAll();
+}
+function weeksToRace() {
+  var diff = diffDays(now(), getRaceDate());
+  return Math.max(0, Math.ceil(diff/7));
+}
+
+// ── Today tab ─────────────────────────────────────────────────
+function renderToday() {
+  var el=document.getElementById('tab-today');
+  var wi=currentWeekIdx();
+  var t=now();
+  var html='';
+
+  // Goal card
+  var wtg = weeksToRace();
+  var rd = getRaceDate();
+  var rdStr = rd.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  html += '<div class="card" id="goal-card" style="background:var(--text);color:#fff;border-color:var(--text);padding:20px 20px 16px;">'
+    +'<div style="display:flex;align-items:flex-start;justify-content:space-between;">'
+    +'<div>'
+    +'<div style="font-size:11px;font-weight:600;opacity:0.5;text-transform:uppercase;letter-spacing:0.7px;margin-bottom:4px;">NYC Marathon</div>'
+    +'<div style="font-size:13px;opacity:0.75;margin-bottom:2px;">'+rdStr+'</div>'
+    +'<div style="font-size:15px;font-weight:700;margin-top:6px;" id="goal-display">'+settings.goalTime+' &nbsp;·&nbsp; '+fmtPace(goalPaceSecs())+'/mi</div>'
+    +'</div>'
+    +'<div style="text-align:right;">'
+    +'<div style="font-size:52px;font-weight:800;line-height:1;color:#5DCAA5;">'+wtg+'</div>'
+    +'<div style="font-size:12px;font-weight:600;opacity:0.6;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px;">weeks to go</div>'
+    +'</div>'
+    +'</div>'
+    +'<button onclick="toggleGoalEdit()" style="margin-top:14px;font-size:12px;color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:5px 12px;cursor:pointer;font-family:inherit;">Edit goal</button>'
+    +'</div>'
+    +'<div id="goal-edit" style="display:none;" class="card">'
+    +'<div class="field-row">'
+    +'<div><div class="field-label">Goal time</div><input class="field-input" id="edit-goal-time" value="'+settings.goalTime+'" placeholder="3:40:00" maxlength="7"></div>'
+    +'<div><div class="field-label">Race date</div><input class="field-input" id="edit-race-date" type="date" value="'+settings.raceDate+'"></div>'
+    +'</div>'
+    +'<button class="btn-save" onclick="saveGoalSettings()">Save</button>'
+    +'</div>';
+
+  // Install prompt banner
+  html+='<div class="install-bar" id="install-bar">'
+    +'<div style="font-size:13px;line-height:1.4"><strong>Add to Home Screen</strong><br><span style="opacity:0.65;font-size:12px">Works offline like a native app</span></div>'
+    +'<button class="install-btn" onclick="doInstall()">Install</button>'
+    +'</div>';
+
+  if (wi===-1) {
+    var days=diffDays(t,getPlanStart());
+    html+='<div class="card center-card"><div class="cdnum">'+days+'</div><div class="cdunit">days until training begins</div><div style="font-size:13px;color:var(--muted);margin-top:8px;">Plan starts '+wkDateStr(0)+'</div></div>'
+      +'<div class="card" style="text-align:center;padding:20px;">'
+      +'<div style="font-size:13px;color:var(--muted);margin-bottom:6px;">Race day</div>'
+      +'<div style="font-size:20px;font-weight:700;">'+getRaceDate().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+'</div>'
+      +'<div style="font-size:13px;color:var(--muted);margin-top:4px;">NYC Marathon · Goal: '+settings.goalTime+' · '+fmtPace(goalPaceSecs())+'/mi</div>'
+      +'</div>';
+    el.innerHTML=html; return;
+  }
+  if (wi===-2) {
+    html+='<div class="race-hero"><div style="font-size:56px;margin-bottom:12px">🏅</div><div style="font-size:24px;font-weight:700;margin-bottom:6px">Training Complete!</div><div style="font-size:14px;opacity:0.9">NYC Marathon 2026</div></div>';
+    el.innerHTML=html; return;
+  }
+  if (t.getFullYear()===2026&&t.getMonth()===10&&t.getDate()===1) {
+    html+='<div class="race-hero"><div style="font-size:56px;margin-bottom:12px">🗽</div><div style="font-size:24px;font-weight:700;margin-bottom:6px">Race Day!</div><div style="font-size:15px;opacity:0.9">NYC Marathon · Goal: '+settings.goalTime+' · '+fmtPace(goalPaceSecs())+'/mi</div></div>';
+    el.innerHTML=html; return;
+  }
+
+  var w=wks[wi];
+  var ri=todayRunIdx();
+  var done=weekDone(wi);
+
+  // Phase + week header
+  html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">'
+    +'<span class="phase-chip" style="background:'+PL[w[2]]+';color:'+PC[w[2]]+'">'+PN[w[2]]+'</span>'
+    +'<span style="font-size:13px;color:var(--muted)">Week '+w[0]+' of 26 · '+w[3]+' mi · '+done+'/'+w[4].length+' done · <strong style="color:var(--text)">'+(w[4].length-done)+' left</strong></span>'
+    +'</div>';
+
+  if (ri===-1) {
+    // Rest day — find next run
+    var nextRi=-1,nextDayName='';
+    for (var d=1;d<=7;d++) {
+      var nd=(t.getDay()+d)%7; var idx=RUN_DAYS.indexOf(nd);
+      if (idx!==-1) { nextRi=idx; nextDayName=DAY_LABELS[nd]; break; }
+    }
+    var nextWi=wi; if (nextRi<ri && nextRi!==-1) nextWi=Math.min(wi+1,25);
+    html+='<div class="card center-card"><div class="big-emoji">😴</div>'
+      +'<div class="center-title">Rest Day</div>'
+      +'<div class="center-sub">'+DAY_LABELS[t.getDay()]+' is a recovery day.'
+      +(nextRi>=0?'<br>Next up: <strong>'+wks[nextWi][4][nextRi][0]+' mi</strong> on '+nextDayName:'')
+      +'</div></div>';
+  } else {
+    var run=w[4][ri];
+    var isDone=isCompleted(wi,ri);
+    var todayLog=state.logs[wi+'-'+ri];
+    var col=PC[w[2]];
+    html+='<div class="today-hero" style="background:'+PL[w[2]]+';border:1px solid '+col+'40;">'
+      +'<div class="today-type">'+TL[run[1]]+'</div>'
+      +'<div class="today-miles">'+getPlannedMiles(wi,ri)+'<span> mi planned</span></div>'
+      +'<div class="today-desc">'+run[2]+'</div>'
+      +(todayLog?'<div class="actual-badge">Actual: '+(todayLog.miles?todayLog.miles+' mi':'')+( todayLog.miles&&todayLog.pace?' · ':'')+( todayLog.pace?todayLog.pace+'/mi':'')+(todayLog.note?' · '+todayLog.note:'')+'</div>':'')
+      +'<button class="check-btn" style="background:'+(isDone?col:'rgba(0,0,0,0.09)')+';color:'+(isDone?'#fff':'var(--text)')+';margin-top:12px" onclick="toggleRun('+wi+','+ri+')">'
+      +(isDone?'✓ Done!':'Mark complete')
+      +'</button>'
+      +'</div>';
+  }
+
+  // Week schedule
+  html+='<div class="card"><div class="section-label">This week</div>';
+  w[4].forEach(function(_,i){ html+=runRow(wi,i,true,i===ri); });
+  html+='</div>';
+
+  // Pace suggestions (shows once ≥2 quality runs are logged)
+  var sugg=getPaceSuggestions();
+  if (sugg) {
+    var lines=[];
+    if (sugg.tempo) lines.push('Tempo avg <strong>'+sugg.tempo.avg+'/mi</strong> → suggested <strong>'+sugg.tempo.range+'</strong>');
+    if (sugg.mp)    lines.push('Marathon pace avg <strong>'+sugg.mp.avg+'/mi</strong> → suggested <strong>'+sugg.mp.range+'</strong>');
+    html+='<div class="card" style="border-color:#85B7EB;background:#E6F1FB;">'
+      +'<div class="section-label" style="color:#85B7EB">📈 Adjusted targets</div>'
+      +'<div style="font-size:13px;color:var(--text);line-height:1.75">'+lines.join('<br>')+'</div>'
+      +'</div>';
+  }
+
+  // Tip
+  html+='<div class="card" style="font-size:13px;color:var(--muted);line-height:1.6">💡 '+PT[w[2]]+'</div>';
+
+  el.innerHTML=html;
+  if (deferredInstall) { var b=document.getElementById('install-bar'); if(b) b.classList.add('show'); }
+  loadFriendsFeed(wi);
+}
+
+// ── Plan tab ──────────────────────────────────────────────────
+function renderPlan() {
+  var el=document.getElementById('tab-plan');
+  var cwi=currentWeekIdx();
+  el.innerHTML=wks.map(function(w,i){
+    var done=weekDone(i); var total=w[4].length;
+    var pct=total?Math.round(done/total*100):0;
+    var exp=state.expandedWeek===i; var isCur=i===cwi;
+    var bStyle=isCur?'border-color:'+PC[w[2]]+';':'';
+    var miLbl=w[0]===26?'Race!':w[3]+' mi';
+
+    var card='<div class="wk-card'+(exp?' exp':'')+'" style="'+bStyle+'" onclick="toggleWeek('+i+')">'
+      +'<div class="wk-head">'
+        +'<div><div class="wk-num">WK '+w[0]+(isCur?' · NOW':'')+'</div>'
+        +'<div class="wk-row"><span class="wk-date">'+wkDateStr(i)+'</span>'
+        +'<span class="phase-chip" style="background:'+PL[w[2]]+';color:'+PC[w[2]]+'">'+PN[w[2]]+'</span></div></div>'
+        +'<div class="wk-right"><div class="wk-mi" style="color:'+PC[w[2]]+'">'+miLbl+'</div>'
+        +'<div class="wk-runs">'+done+'/'+total+' done</div></div>'
+      +'</div>'
+      +'<div class="wk-pbar"><div class="wk-pfill" style="width:'+pct+'%;background:'+PC[w[2]]+'"></div></div>'
+      +'</div>';
+
+    var detail='';
+    if (exp) {
+      detail='<div class="wk-detail open" id="wd-'+i+'"><div class="wk-tip">'+PT[w[2]]+'</div>';
+      w[4].forEach(function(_,ri){ detail+=runRow(i,ri,true,false); });
+      detail+='</div>';
+    }
+    return card+detail;
+  }).join('');
+
+  if (cwi>=0) setTimeout(function(){
+    var cards=el.querySelectorAll('.wk-card');
+    if (cards[cwi]) cards[cwi].scrollIntoView({block:'center',behavior:'smooth'});
+  },50);
+}
+
+function toggleWeek(i) {
+  state.expandedWeek=state.expandedWeek===i?-1:i;
+  saveState(); renderPlan();
+  setTimeout(function(){
+    var p=document.getElementById('wd-'+i);
+    if(p) p.scrollIntoView({block:'nearest',behavior:'smooth'});
+  },60);
+}
+
+// ── Stats tab ─────────────────────────────────────────────────
+function renderStats() {
+  var el=document.getElementById('tab-stats');
+  var tRuns=0,dRuns=0,tMi=0,dMi=0;
+  wks.forEach(function(w,wi){ w[4].forEach(function(r,ri){
+    if(r[2].startsWith('RACE')) return;
+    tRuns++; tMi+=r[0];
+    if(isCompleted(wi,ri)){ dRuns++; dMi+=r[0]; }
+  }); });
+  var pct=tRuns?Math.round(dRuns/tRuns*100):0;
+  var cwi=currentWeekIdx();
+  var weeksIn=cwi>=0?cwi:cwi===-2?26:0;
+
+  var R=54,C=(2*Math.PI*R),off=(C*(1-pct/100)).toFixed(1);
+  var ring='<svg width="140" height="140" viewBox="0 0 140 140">'
+    +'<circle cx="70" cy="70" r="'+R+'" fill="none" stroke="#e0e0da" stroke-width="10"/>'
+    +'<circle cx="70" cy="70" r="'+R+'" fill="none" stroke="#5DCAA5" stroke-width="10"'
+    +' stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off+'"'
+    +' stroke-linecap="round" transform="rotate(-90 70 70)"/>'
+    +'<text x="70" y="65" text-anchor="middle" font-size="30" font-weight="700" fill="#1a1a18" font-family="-apple-system,sans-serif">'+pct+'%</text>'
+    +'<text x="70" y="84" text-anchor="middle" font-size="12" fill="#888" font-family="-apple-system,sans-serif">complete</text>'
+    +'</svg>';
+
+  // Actual logged miles
+  var actMi=0, actRuns=0;
+  wks.forEach(function(w,wi){ w[4].forEach(function(r,ri){
+    var log=state.logs[wi+'-'+ri];
+    if (log&&log.miles) { actMi+=parseFloat(log.miles)||0; actRuns++; }
+  }); });
+  actMi=Math.round(actMi*10)/10;
+
+  var html='<div class="stats-grid">'
+    +'<div class="stat-card"><div class="stat-label">Runs done</div><div class="stat-val">'+dRuns+'</div><div class="stat-sub">of '+tRuns+'</div></div>'
+    +'<div class="stat-card"><div class="stat-label">Miles planned</div><div class="stat-val">'+dMi+'</div><div class="stat-sub">'+(actRuns>0?'actual: '+actMi+' mi':'of '+tMi+' total')+'</div></div>'
+    +'<div class="stat-card"><div class="stat-label">Weeks in</div><div class="stat-val">'+weeksIn+'</div><div class="stat-sub">of 26 weeks</div></div>'
+    +'<div class="stat-card"><div class="stat-label">Avg mi/week</div><div class="stat-val">'+(weeksIn>0?Math.round((actRuns>0?actMi:dMi)/weeksIn):0)+'</div><div class="stat-sub">'+(actRuns>0?'actual':'planned')+'</div></div>'
+    +'</div>'
+    +'<div class="card ring-wrap">'+ring+'</div>';
+
+  html+='<div class="card"><div class="section-label">Phase breakdown</div>';
+  [[0,'Base'],[1,'Build'],[2,'Peak'],[3,'Taper']].forEach(function(p){
+    var pr=0,pd=0;
+    wks.forEach(function(w,wi){ if(w[2]===p[0]) w[4].forEach(function(r,ri){
+      if(!r[2].startsWith('RACE')){ pr++; if(isCompleted(wi,ri)) pd++; }
+    }); });
+    var pp=pr?Math.round(pd/pr*100):0;
+    html+='<div class="pb-row"><div class="pb-name">'+p[1]+'</div>'
+      +'<div class="pb-track"><div class="pb-fill" style="width:'+pp+'%;background:'+PC[p[0]]+'"></div></div>'
+      +'<div class="pb-ct">'+pd+'/'+pr+'</div></div>';
+  });
+  html+='</div>';
+
+  var gp=goalPaceSecs();
+  html+='<div class="card"><div class="section-label">Pace guide</div>'
+    +'<div class="pace-row"><div class="pdot" style="background:#9FE1CB"></div><div>Easy / long run<br><span style="color:var(--muted);font-size:12px">'+fmtPace(gp+75)+'–'+fmtPace(gp+105)+' /mi</span></div></div>'
+    +'<div class="pace-row"><div class="pdot" style="background:#85B7EB"></div><div>Tempo<br><span style="color:var(--muted);font-size:12px">'+fmtPace(gp-30)+'–'+fmtPace(gp-15)+' /mi</span></div></div>'
+    +'<div class="pace-row"><div class="pdot" style="background:#F0997B"></div><div>Marathon pace<br><span style="color:var(--muted);font-size:12px">'+fmtPace(gp-4)+'–'+fmtPace(gp+2)+' /mi</span></div></div>'
+    +'</div>';
+
+  if (stravaConnected()) {
+    var athlete = (stravaToken()||{}).athlete;
+    var name = athlete ? (athlete.firstname+' '+athlete.lastname).trim() : 'Connected';
+    html+='<div class="card" style="border-color:#FC4C0240;">'
+      +'<div class="section-label" style="color:#FC4C02">Strava</div>'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;">'
+      +'<span class="strava-chip"><svg width="13" height="13" viewBox="0 0 24 24" fill="#FC4C02"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>'+name+'</span>'
+      +'<button onclick="disconnectStrava()" style="font-size:12px;color:var(--muted);background:none;border:none;cursor:pointer;font-family:inherit;">Disconnect</button>'
+      +'</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:8px;">Tap \'Import from Strava\' on any log sheet to auto-fill miles & pace.</div>'
+      +'</div>';
+  } else {
+    html+='<div class="card">'
+      +'<div class="section-label">Strava</div>'
+      +'<div style="font-size:13px;color:var(--muted);margin-bottom:12px;">Connect Strava to auto-import your runs into the log sheet.</div>'
+      +'<button class="btn-strava" onclick="connectStrava()" style="margin-bottom:0">'
+      +'<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>'
+      +'Connect Strava</button>'
+      +'</div>';
+  }
+
+  el.innerHTML=html;
+}
+
+// ── Log sheet ─────────────────────────────────────────────────
+function openLog(wi,ri) {
+  var run=wks[wi][4][ri];
+  if (run[2].startsWith('RACE')) return;
+  logCtx={wi:wi,ri:ri};
+  var log=state.logs[wi+'-'+ri];
+  document.getElementById('sheet-title').textContent=TL[run[1]]+' · '+getPlannedMiles(wi,ri)+' mi planned';
+  document.getElementById('log-miles').value=log&&log.miles!=null?log.miles:'';
+  document.getElementById('log-pace').value=log&&log.pace?log.pace:'';
+  document.getElementById('log-note').value=log&&log.note?log.note:'';
+  document.getElementById('btn-clear').style.display=log?'block':'none';
+  var importBtn = document.getElementById('strava-import-btn');
+  if (importBtn) {
+    importBtn.innerHTML = stravaConnected()
+      ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg> Import from Strava'
+      : '<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg> Connect Strava to import';
+  }
+  document.getElementById('overlay').classList.add('open');
+  document.getElementById('sheet').classList.add('open');
+  setTimeout(function(){ document.getElementById('log-miles').focus(); },320);
+}
+function closeLog() {
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('sheet').classList.remove('open');
+  logCtx=null;
+}
+function saveLog() {
+  if (!logCtx) return;
+  var miles=document.getElementById('log-miles').value.trim();
+  var pace=document.getElementById('log-pace').value.trim();
+  var note=document.getElementById('log-note').value.trim();
+  var key=logCtx.wi+'-'+logCtx.ri;
+  if (miles||pace||note) {
+    state.logs[key]={ miles:miles?parseFloat(miles):null, pace:pace||null, note:note||null };
+    state.completed[key]=true;
+  }
+  recalcAdjustments(logCtx.wi);
+  saveState(); syncRun(logCtx.wi,logCtx.ri); closeLog(); renderAll();
+}
+function clearLog() {
+  if (!logCtx) return;
+  var wi=logCtx.wi, ri=logCtx.ri;
+  delete state.logs[wi+'-'+ri];
+  recalcAdjustments(wi);
+  saveState(); syncRun(wi,ri); closeLog(); renderAll();
+}
+
+// ── Mile redistribution ───────────────────────────────────────
+function getPlannedMiles(wi,ri) {
+  return state.adjusted[wi+'-'+ri]!=null ? state.adjusted[wi+'-'+ri] : wks[wi][4][ri][0];
+}
+function recalcAdjustments(wi) {
+  var w=wks[wi];
+  // Clear existing adjustments for this week
+  w[4].forEach(function(_,ri){ delete state.adjusted[wi+'-'+ri]; });
+  // Total delta across all logged runs (rounded to nearest mile each)
+  var totalDelta=0;
+  w[4].forEach(function(run,ri){
+    var log=state.logs[wi+'-'+ri];
+    if (!log||log.miles==null) return;
+    totalDelta+=Math.round(parseFloat(log.miles)-run[0]);
+  });
+  if (totalDelta===0) return;
+  // Pool: uncompleted, unlogged easy runs
+  var pool=[];
+  w[4].forEach(function(run,ri){
+    if (run[1]===0&&!isCompleted(wi,ri)&&!state.logs[wi+'-'+ri]&&!run[2].startsWith('RACE')) pool.push(ri);
+  });
+  if (!pool.length) return;
+  // Spread -totalDelta 1 mile at a time, cycling through pool
+  var sign=totalDelta>0?-1:1;
+  var remaining=Math.abs(totalDelta);
+  var adj={};
+  pool.forEach(function(ri){ adj[ri]=0; });
+  while (remaining>0) {
+    var progress=false;
+    for (var j=0;j<pool.length&&remaining>0;j++) {
+      var ri=pool[j];
+      var cur=w[4][ri][0]+(adj[ri]||0);
+      if (sign===-1&&cur<=1) continue; // never go below 1 mi
+      adj[ri]=(adj[ri]||0)+sign;
+      remaining--;
+      progress=true;
+    }
+    if (!progress) break;
+  }
+  pool.forEach(function(ri){ if (adj[ri]!==0) state.adjusted[wi+'-'+ri]=w[4][ri][0]+adj[ri]; });
+}
+
+// ── Pace analysis ─────────────────────────────────────────────
+function parsePaceSecs(str) {
+  var m=(str||'').trim().match(/^(\d+):(\d{2})$/);
+  return m?parseInt(m[1])*60+parseInt(m[2]):0;
+}
+function secsToPace(s) {
+  s=Math.round(s); var m=Math.floor(s/60),sec=s%60;
+  return m+':'+(sec<10?'0':'')+sec;
+}
+function getPaceSuggestions() {
+  var TEMPO_MID=8*60+2, MP_MID=8*60+22; // midpoints of plan ranges
+  var tSecs=[],mpSecs=[];
+  wks.forEach(function(w,wi){ w[4].forEach(function(run,ri){
+    var log=state.logs[wi+'-'+ri];
+    if (!log||!log.pace) return;
+    var s=parsePaceSecs(log.pace); if (!s) return;
+    if (run[1]===1) tSecs.push(s);
+    if (run[1]===2) mpSecs.push(s);
+  }); });
+  var res=null;
+  if (tSecs.length>=2) {
+    var avg=Math.round(tSecs.reduce(function(a,b){return a+b;},0)/tSecs.length);
+    if (Math.abs(avg-TEMPO_MID)>10) {
+      res=res||{};
+      res.tempo={ avg:secsToPace(avg), range:secsToPace(avg-8)+'–'+secsToPace(avg+8)+'/mi' };
+    }
+  }
+  if (mpSecs.length>=2) {
+    var avg2=Math.round(mpSecs.reduce(function(a,b){return a+b;},0)/mpSecs.length);
+    if (Math.abs(avg2-MP_MID)>10) {
+      res=res||{};
+      res.mp={ avg:secsToPace(avg2), range:secsToPace(avg2-4)+'–'+secsToPace(avg2+6)+'/mi' };
+    }
+  }
+  return res;
+}
+
+// ── Header ────────────────────────────────────────────────────
+function renderHeader() {
+  var wi=currentWeekIdx(); var t=now();
+  var ds=t.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  var el=document.getElementById('hdr-right');
+  if (wi===-1) {
+    el.innerHTML='<div class="header-date">'+ds+'</div><div class="header-wk" style="opacity:0.6">'+diffDays(t,getPlanStart())+' days to start</div>';
+  } else if (wi===-2) {
+    el.innerHTML='<div class="header-date">'+ds+'</div><div class="header-wk">Race complete 🎉</div>';
+  } else {
+    var w=wks[wi];
+    el.innerHTML='<div class="header-date">'+ds+'</div><div class="header-wk" style="color:'+PC[w[2]]+'">Week '+w[0]+' · '+PN[w[2]]+'</div>';
+  }
+  var sub=document.getElementById('header-sub');
+  if (sub) sub.textContent=settings.goalTime+' goal · '+fmtPace(goalPaceSecs())+'/mi · '+new Date(settings.raceDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+}
+
+function renderTab(tab) {
+  if (tab==='today') renderToday();
+  else if (tab==='plan') renderPlan();
+  else if (tab==='strava') renderStrava();
+  else renderStats();
+}
+function renderAll() { renderHeader(); renderTab(currentTab); }
+
+// ── PWA install ───────────────────────────────────────────────
+window.addEventListener('beforeinstallprompt',function(e){
+  e.preventDefault(); deferredInstall=e;
+  var b=document.getElementById('install-bar'); if(b) b.classList.add('show');
+});
+function doInstall() {
+  if (!deferredInstall) return;
+  deferredInstall.prompt();
+  deferredInstall.userChoice.then(function(){ deferredInstall=null; });
+  var b=document.getElementById('install-bar'); if(b) b.classList.remove('show');
+}
+
+// ── Service worker ────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load',function(){
+    navigator.serviceWorker.register('./sw.js').catch(function(){});
+  });
+}
+
+// ── Supabase ──────────────────────────────────────────────────
+var SUPA_URL = 'https://ilqmgmhjsfegolttixdr.supabase.co';
+var SUPA_KEY = 'sb_publishable_09xTat5ioiDNNoqvdz8G1Q_mBmyGLsm';
+var sb = null;
+var currentUser = null;
+var currentUserName = '';
+
+function initSupabase() {
+  sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+  sb.auth.onAuthStateChange(function(event, session) {
+    if (event === 'SIGNED_OUT') { showAuth(); }
+  });
+}
+
+async function checkAuth() {
+  var hasLocal = Object.keys(state.completed).length || Object.keys(state.logs).length;
+  // Show app immediately from localStorage — never block on network
+  if (hasLocal) showApp();
+
+  var res = await sb.auth.getSession();
+  var session = res.data.session;
+  if (session) {
+    currentUser = session.user;
+    var meta = (session.user.user_metadata)||{};
+    if (meta.goalTime) { settings.goalTime = meta.goalTime; saveSettings(); }
+    if (meta.raceDate) { settings.raceDate = meta.raceDate; saveSettings(); }
+    if (!hasLocal) showApp();
+    loadProfile().then(function() { updateUserPill(); renderAll(); });
+    if (!hasLocal) loadFromSupabase().then(function() { renderAll(); });
+  } else {
+    if (!hasLocal) showAuth();
+    // Has local data but no session — show app, no cloud sync until they sign in
+  }
+}
+
+function showAuth() {
+  document.getElementById('auth-screen').classList.remove('hidden');
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('user-pill').style.display = 'none';
+}
+function showApp() {
+  document.getElementById('auth-screen').classList.add('hidden');
+  document.getElementById('app').style.display = 'flex';
+  renderAll();
+  updateUserPill();
+}
+
+async function loadProfile() {
+  if (!currentUser) return;
+  var res = await sb.from('profiles').select('name').eq('id', currentUser.id).single();
+  currentUserName = (res.data && res.data.name) || currentUser.email.split('@')[0];
+}
+
+function updateUserPill() {
+  var pill = document.getElementById('user-pill');
+  var av = document.getElementById('user-avatar');
+  var nl = document.getElementById('user-name-label');
+  if (!currentUser) { pill.style.display='none'; return; }
+  var initials = currentUserName.split(' ').map(function(n){return n[0]||'';}).join('').toUpperCase().slice(0,2)||'?';
+  av.textContent = initials;
+  nl.textContent = currentUserName.split(' ')[0];
+  pill.style.display = 'flex';
+}
+
+async function doSignOut() {
+  if (!confirm('Sign out?')) return;
+  await sb.auth.signOut();
+  currentUser = null; currentUserName = '';
+  state = { completed:{}, expandedWeek:-1, logs:{}, adjusted:{} };
+  saveState();
+  showAuth();
+}
+
+// ── Auth form ─────────────────────────────────────────────────
+var authMode = 'in';
+function switchAuthMode(mode) {
+  authMode = mode;
+  document.getElementById('auth-tab-in').classList.toggle('active', mode==='in');
+  document.getElementById('auth-tab-up').classList.toggle('active', mode==='up');
+  document.getElementById('auth-name-wrap').style.display = mode==='up'?'block':'none';
+  document.getElementById('auth-submit').textContent = mode==='in'?'Sign in':'Create account';
+  document.getElementById('auth-error').style.display = 'none';
+  document.getElementById('auth-confirm').style.display = 'none';
+}
+
+async function handleAuth() {
+  var email = document.getElementById('auth-email').value.trim();
+  var password = document.getElementById('auth-password').value;
+  var name = document.getElementById('auth-name').value.trim();
+  var errEl = document.getElementById('auth-error');
+  var btn = document.getElementById('auth-submit');
+  if (!email || !password) { showAuthError('Please fill in all fields.'); return; }
+  btn.textContent = '…'; btn.disabled = true;
+  var err = null;
+  if (authMode === 'up') {
+    if (!name) { showAuthError('Please enter your name.'); btn.textContent='Create account'; btn.disabled=false; return; }
+    var res = await sb.auth.signUp({ email, password });
+    err = res.error;
+    if (!err && res.data.user) {
+      await sb.from('profiles').upsert({ id: res.data.user.id, name });
+      if (!res.data.session) {
+        document.getElementById('auth-confirm').style.display = 'block';
+        btn.textContent = 'Create account'; btn.disabled = false; return;
+      }
+      currentUser = res.data.user; currentUserName = name;
+      showApp(); loadFromSupabase().then(function(){ renderAll(); });
+    }
+  } else {
+    // Show app immediately from local data — auth & sync happen in background
+    showApp();
+    var res2 = await sb.auth.signInWithPassword({ email, password });
+    err = res2.error;
+    if (!err) {
+      currentUser = res2.data.user;
+      loadProfile().then(function(){ updateUserPill(); });
+      loadFromSupabase().then(function(){ renderAll(); });
+    } else {
+      showAuth();
+      showAuthError(err.message);
+      btn.textContent = 'Sign in'; btn.disabled = false;
+    }
+    return;
+  }
+  if (err) { showAuthError(err.message); btn.textContent = authMode==='in'?'Sign in':'Create account'; btn.disabled=false; }
+}
+function showAuthError(msg) {
+  var el = document.getElementById('auth-error');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+// ── Supabase data sync ────────────────────────────────────────
+async function loadFromSupabase() {
+  if (!currentUser || !sb) return;
+  var res = await sb.from('run_logs').select('*').eq('user_id', currentUser.id);
+  if (!res.data || !res.data.length) {
+    // No cloud data — push existing local state up to Supabase
+    var keys = Object.keys(state.completed);
+    for (var i=0; i<keys.length; i++) {
+      var parts = keys[i].split('-');
+      await syncRun(parseInt(parts[0]), parseInt(parts[1]));
+    }
+    return;
+  }
+  // Merge cloud into local — never wipe local-only data
+  res.data.forEach(function(row) {
+    var key = row.week_idx+'-'+row.run_idx;
+    if (row.completed) state.completed[key] = true;
+    if (row.actual_miles || row.actual_pace || row.note) {
+      state.logs[key] = { miles: row.actual_miles, pace: row.actual_pace, note: row.note };
+    }
+  });
+  for (var i=0;i<26;i++) recalcAdjustments(i);
+  saveState();
+}
+
+async function syncRun(wi, ri) {
+  if (!currentUser || !sb) return;
+  var key = wi+'-'+ri;
+  var log = state.logs[key] || {};
+  await sb.from('run_logs').upsert({
+    user_id: currentUser.id, week_idx: wi, run_idx: ri,
+    actual_miles: log.miles||null, actual_pace: log.pace||null,
+    note: log.note||null, completed: !!state.completed[key]
+  }, { onConflict: 'user_id,week_idx,run_idx' });
+}
+
+// ── Friends feed ──────────────────────────────────────────────
+var friendsData = {}; // cache: userId -> {name, logs}
+
+async function loadFriendsFeed(wi) {
+  if (!sb || !currentUser) return;
+  var logsRes = await sb.from('run_logs').select('user_id,run_idx,completed,actual_miles,actual_pace,note')
+    .eq('week_idx', wi).eq('completed', true).neq('user_id', currentUser.id);
+  if (!logsRes.data || !logsRes.data.length) return;
+  var ids = [...new Set(logsRes.data.map(function(l){return l.user_id;}))];
+  var profRes = await sb.from('profiles').select('id,name').in('id', ids);
+  var profMap = {};
+  (profRes.data||[]).forEach(function(p){ profMap[p.id]=p.name; });
+  var byUser = {};
+  logsRes.data.forEach(function(l){
+    if (!byUser[l.user_id]) byUser[l.user_id]={ name: profMap[l.user_id]||'Friend', logs:[] };
+    byUser[l.user_id].logs.push(l);
+  });
+  friendsData[wi] = byUser;
+  var friends = Object.values(byUser);
+  if (!friends.length) return;
+  var total = wks[wi][4].length;
+  var col = PC[wks[wi][2]];
+  var html = '<div class="card"><div class="section-label">Friends this week</div>';
+  friends.forEach(function(f, idx){
+    var uid = Object.keys(byUser)[idx];
+    var initials = f.name.split(' ').map(function(n){return n[0]||'';}).join('').toUpperCase().slice(0,2)||'?';
+    var pct = Math.round(f.logs.length/total*100);
+    html += '<div class="friend-row" onclick="showFriendDetail(\''+wi+'\',\''+uid+'\')" style="cursor:pointer;">'
+      +'<div class="friend-avatar" style="background:'+col+'">'+initials+'</div>'
+      +'<div style="flex:1"><div style="font-size:13px;font-weight:500">'+f.name+'</div>'
+      +'<div style="font-size:12px;color:var(--muted)">'+f.logs.length+'/'+total+' runs done</div></div>'
+      +'<div style="display:flex;align-items:center;gap:6px;">'
+      +'<div style="font-size:13px;font-weight:700;color:'+col+'">'+pct+'%</div>'
+      +'<div style="font-size:11px;color:var(--muted);">›</div>'
+      +'</div></div>';
+  });
+  html += '</div>';
+  var tab = document.getElementById('tab-today');
+  if (tab) tab.innerHTML += html;
+}
+
+function showFriendDetail(wi, uid) {
+  wi = parseInt(wi);
+  var friend = (friendsData[wi]||{})[uid];
+  if (!friend) return;
+  var col = PC[wks[wi][2]];
+  var total = wks[wi][4].length;
+  var html = '<div id="friend-overlay" onclick="closeFriendDetail()" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:150;backdrop-filter:blur(2px);"></div>'
+    +'<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card);border-radius:16px;padding:20px;z-index:151;width:90%;max-width:420px;max-height:80vh;overflow-y:auto;">'
+    +'<div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 16px;"></div>'
+    +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">'
+    +'<div class="friend-avatar" style="background:'+col+';width:40px;height:40px;font-size:15px;">'+friend.name.split(' ').map(function(n){return n[0]||'';}).join('').toUpperCase().slice(0,2)+'</div>'
+    +'<div><div style="font-size:16px;font-weight:600;">'+friend.name+'</div>'
+    +'<div style="font-size:12px;color:var(--muted);">Week '+wks[wi][0]+' · '+friend.logs.length+'/'+total+' runs done</div></div>'
+    +'</div>';
+  wks[wi][4].forEach(function(run, ri) {
+    var log = friend.logs.find(function(l){ return l.run_idx === ri; });
+    var done = !!log;
+    html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">'
+      +'<div style="width:8px;height:8px;border-radius:50%;background:'+TC[run[1]]+';flex-shrink:0;"></div>'
+      +'<div style="flex:1;"><div style="font-size:13px;font-weight:500;">'+run[0]+' mi · '+run[2].slice(0,45)+'</div>'
+      +(log&&(log.actual_miles||log.actual_pace)?'<div style="font-size:12px;color:#5DCAA5;margin-top:2px;">'+(log.actual_miles?log.actual_miles+' mi':'')+(log.actual_miles&&log.actual_pace?' · ':'')+( log.actual_pace?log.actual_pace+'/mi':'')+'</div>':'')
+      +'</div>'
+      +(done?'<div style="color:#5DCAA5;font-size:16px;">✓</div>':'<div style="color:var(--border);font-size:16px;">○</div>')
+      +'</div>';
+  });
+  html += '</div>';
+  var wrap = document.createElement('div');
+  wrap.id = 'friend-detail-wrap';
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap);
+}
+
+function closeFriendDetail() {
+  var w = document.getElementById('friend-detail-wrap');
+  if (w) w.remove();
+}
+
+// ── Strava ────────────────────────────────────────────────────
+var STRAVA_CLIENT_ID = '232950';
+var STRAVA_CLIENT_SECRET = '76a4d2d7050e72e572f77ccf4a8d86793543a7cb'; // ← paste your Strava Client Secret here
+var STRAVA_REDIRECT = location.origin + location.pathname.replace(/\/+$/,'');
+
+function stravaToken() { try { return JSON.parse(localStorage.getItem('strava_token')||'null'); } catch(e){ return null; } }
+function stravaConnected() { var t=stravaToken(); return !!(t&&t.access_token); }
+
+async function refreshStravaIfNeeded() {
+  var t=stravaToken(); if (!t) return null;
+  if (Date.now()/1000 < t.expires_at-60) return t.access_token;
+  var res=await fetch('https://www.strava.com/oauth/token',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({client_id:STRAVA_CLIENT_ID,client_secret:STRAVA_CLIENT_SECRET,grant_type:'refresh_token',refresh_token:t.refresh_token})
+  });
+  var d=await res.json();
+  if (d.access_token) { localStorage.setItem('strava_token',JSON.stringify(Object.assign({},t,d))); return d.access_token; }
+  return null;
+}
+
+function connectStrava() {
+  window.location='https://www.strava.com/oauth/authorize?client_id='+STRAVA_CLIENT_ID
+    +'&redirect_uri='+encodeURIComponent(STRAVA_REDIRECT)
+    +'&response_type=code&approval_prompt=force&scope=read,activity:read_all';
+}
+function disconnectStrava() { localStorage.removeItem('strava_token'); renderStats(); }
+
+async function handleStravaCallback() {
+  var params=new URLSearchParams(location.search);
+  var code=params.get('code'); if (!code) return;
+  history.replaceState({},'',location.pathname);
+  var res=await fetch('https://www.strava.com/oauth/token',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({client_id:STRAVA_CLIENT_ID,client_secret:STRAVA_CLIENT_SECRET,code:code,grant_type:'authorization_code'})
+  });
+  var d=await res.json();
+  if (d.access_token) {
+    localStorage.setItem('strava_token',JSON.stringify(d));
+    renderAll();
+    switchTab('strava');
+  } else {
+    alert('Strava connection failed: '+(d.message||JSON.stringify(d))+'\n\nCheck that your Client Secret is correct in index.html.');
+  }
+}
+
+async function stravaImport() {
+  if (!logCtx) return;
+  var wi=logCtx.wi, ri=logCtx.ri;
+  if (!stravaConnected()) { connectStrava(); return; }
+  var token=await refreshStravaIfNeeded(); if (!token) { connectStrava(); return; }
+
+  var btn=document.getElementById('strava-import-btn');
+  btn.textContent='Fetching…'; btn.disabled=true;
+
+  // Fetch 20 most recent activities — find closest run by distance
+  var res=await fetch('https://www.strava.com/api/v3/athlete/activities?per_page=20',
+    {headers:{'Authorization':'Bearer '+token}});
+  var acts=await res.json();
+  btn.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg> Import from Strava';
+  btn.disabled=false;
+
+  if (!Array.isArray(acts)) {
+    localStorage.removeItem('strava_token');
+    alert('Strava auth error: '+(acts.message||JSON.stringify(acts))+'\n\nPlease reconnect Strava in the Stats tab.');
+    return;
+  }
+  if (!acts.length) { alert('No Strava activities found. Make sure you have runs synced to Strava.'); return; }
+  var runs=acts.filter(function(a){return a.type==='Run'||a.sport_type==='Run';});
+  if (!runs.length) { alert('No running activities found in your recent Strava history.'); return; }
+  var plannedMeters=wks[wi][4][ri][0]*1609.34;
+  var act=runs.reduce(function(best,a){
+    return Math.abs(a.distance-plannedMeters)<Math.abs(best.distance-plannedMeters)?a:best;
+  },runs[0]);
+  var miles=Math.round((act.distance/1609.34)*100)/100;
+  var secPerMile=act.moving_time/(act.distance/1609.34);
+  var pm=Math.floor(secPerMile/60), ps=Math.round(secPerMile%60);
+  document.getElementById('log-miles').value=miles;
+  document.getElementById('log-pace').value=pm+':'+(ps<10?'0':'')+ps;
+  if (!document.getElementById('log-note').value) document.getElementById('log-note').value=act.name||'';
+}
+
+// ── Strava tab ────────────────────────────────────────────────
+var stravaActs = [];
+var pendingStravaAct = null;
+
+async function renderStrava() {
+  var el = document.getElementById('tab-strava');
+  if (!stravaConnected()) {
+    el.innerHTML = '<div class="card" style="text-align:center;padding:36px 20px;">'
+      +'<div style="font-size:48px;margin-bottom:12px">🏅</div>'
+      +'<div style="font-size:17px;font-weight:600;margin-bottom:6px;">Connect Strava</div>'
+      +'<div style="font-size:13px;color:var(--muted);margin-bottom:20px;">Import your runs automatically</div>'
+      +'<button class="btn-strava" onclick="connectStrava()" style="margin:0 auto;max-width:240px">'
+      +'<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>'
+      +'Connect Strava</button></div>';
+    return;
+  }
+
+  el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px;">Loading runs…</div>';
+
+  var token = await refreshStravaIfNeeded();
+  if (!token) {
+    el.innerHTML = '<div class="card center-card"><div style="font-size:13px;color:var(--muted)">Session expired.</div>'
+      +'<button class="btn-strava" onclick="connectStrava()" style="margin-top:16px">'
+      +'<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>'
+      +'Reconnect Strava</button></div>';
+    return;
+  }
+
+  // First test if token works at all
+  var athleteRes = await fetch('https://www.strava.com/api/v3/athlete', {headers:{'Authorization':'Bearer '+token}});
+  var athlete = await athleteRes.json();
+  if (!athlete.id) {
+    el.innerHTML = '<div class="card"><div style="font-size:13px;color:#F0997B;">Auth test failed: '+JSON.stringify(athlete)+'</div><button class="btn-strava" onclick="disconnectStrava();switchTab(\'strava\')" style="margin-top:12px">Reconnect Strava</button></div>';
+    return;
+  }
+
+  var res = await fetch('https://www.strava.com/api/v3/athlete/activities?per_page=30&_='+Date.now(), {headers:{'Authorization':'Bearer '+token, 'Cache-Control':'no-cache'}});
+  var rawText = await res.text();
+  var acts;
+  try { acts = JSON.parse(rawText); } catch(e) { acts = []; }
+
+  // Debug: show raw info if empty
+  if (!Array.isArray(acts) || !acts.length) {
+    el.innerHTML = '<div class="card"><div class="section-label">Debug info</div>'
+      +'<div style="font-size:12px;color:var(--muted);line-height:1.7">'
+      +'Athlete: '+athlete.firstname+' '+athlete.lastname+'<br>'
+      +'HTTP status: '+res.status+'<br>'
+      +'Response: '+rawText.slice(0,300)
+      +'</div><button onclick="renderStrava()" style="margin-top:12px;padding:8px 16px;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;font-family:inherit;">Retry</button></div>';
+    return;
+  }
+
+  if (!Array.isArray(acts)) {
+    localStorage.removeItem('strava_token');
+    el.innerHTML = '<div class="card center-card"><div style="font-size:13px;color:#F0997B;margin-bottom:16px;">Strava error: '+(acts.message||'auth failed')+'. Please reconnect.</div>'
+      +'<button class="btn-strava" onclick="connectStrava()">'
+      +'<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>'
+      +'Reconnect Strava</button></div>';
+    return;
+  }
+
+  stravaActs = acts.filter(function(a){
+    var t=(a.sport_type||a.type||'').toLowerCase();
+    return t.indexOf('run')!==-1;
+  });
+
+  if (!stravaActs.length) {
+    // Show all activity types for debugging
+    var types = acts.map(function(a){return (a.sport_type||a.type);}).join(', ');
+    el.innerHTML = '<div class="card center-card"><div style="font-size:13px;color:var(--muted);">No running activities found.<br><br>'
+      +(acts.length?'Found '+acts.length+' activities of type: '+types:'No activities at all — make sure your run has synced to Strava.')
+      +'</div></div>';
+    return;
+  }
+
+  var html = '<div class="card"><div class="section-label">Recent runs</div>';
+  stravaActs.forEach(function(a, idx) {
+    var miles = Math.round((a.distance/1609.34)*100)/100;
+    var spm = a.moving_time/(a.distance/1609.34);
+    var pm = Math.floor(spm/60), ps = Math.round(spm%60);
+    var pace = pm+':'+(ps<10?'0':'')+ps;
+    var d = new Date(a.start_date_local);
+    var dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric',weekday:'short'});
+    html += '<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);">'
+      +'<div style="flex:1;min-width:0;">'
+      +'<div style="font-size:13px;font-weight:600;">'+miles+' mi · '+pace+'/mi</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:2px;">'+dateStr+' · '+a.name+'</div>'
+      +'</div>'
+      +'<button onclick="openRunPicker('+idx+')" style="flex-shrink:0;padding:7px 13px;background:#FC4C02;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Log →</button>'
+      +'</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+var pickerOverlay = null;
+function openRunPicker(actIdx) {
+  pendingStravaAct = stravaActs[actIdx];
+  var wi = currentWeekIdx(); if (wi < 0) wi = 0;
+
+  var html = '<div id="picker-overlay" onclick="closeRunPicker()" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:150;backdrop-filter:blur(2px);"></div>'
+    +'<div id="picker-sheet" style="position:fixed;bottom:0;left:0;right:0;background:var(--card);border-radius:20px 20px 0 0;padding:20px 20px calc(24px + env(safe-area-inset-bottom,0px));z-index:151;max-width:520px;margin:0 auto;">'
+    +'<div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 16px;"></div>'
+    +'<div style="font-size:15px;font-weight:600;margin-bottom:4px;">Which training run is this?</div>'
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:16px;">'
+    +Math.round((pendingStravaAct.distance/1609.34)*10)/10+' mi · '+new Date(pendingStravaAct.start_date_local).toLocaleDateString('en-US',{month:'short',day:'numeric'})
+    +'</div>';
+
+  // Show surrounding weeks
+  for (var w = Math.max(0,wi-1); w <= Math.min(25,wi+1); w++) {
+    var wk = wks[w];
+    html += '<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;margin:10px 0 6px;">Week '+wk[0]+' · '+wk[1]+'</div>';
+    wk[4].forEach(function(run, ri) {
+      var done = isCompleted(w, ri);
+      html += '<div onclick="assignStravaToRun('+w+','+ri+')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:'+(done?'#f5f5f3':'var(--bg)')+';margin-bottom:6px;cursor:pointer;border:1px solid var(--border);">'
+        +'<div style="width:8px;height:8px;border-radius:50%;background:'+TC[run[1]]+';flex-shrink:0;"></div>'
+        +'<div style="flex:1;font-size:13px;">'+run[0]+' mi · '+run[2].slice(0,40)+'</div>'
+        +(done?'<div style="font-size:11px;color:var(--muted);">✓ done</div>':'')
+        +'</div>';
+    });
+  }
+  html += '</div>';
+
+  var wrap = document.createElement('div');
+  wrap.id = 'picker-wrap';
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap);
+  pickerOverlay = wrap;
+}
+
+function closeRunPicker() {
+  var w = document.getElementById('picker-wrap');
+  if (w) w.remove();
+  pickerOverlay = null;
+}
+
+function assignStravaToRun(wi, ri) {
+  closeRunPicker();
+  var a = pendingStravaAct;
+  var miles = Math.round((a.distance/1609.34)*100)/100;
+  var spm = a.moving_time/(a.distance/1609.34);
+  var pm = Math.floor(spm/60), ps = Math.round(spm%60);
+  var pace = pm+':'+(ps<10?'0':'')+ps;
+  var key = wi+'-'+ri;
+  state.logs[key] = { miles: miles, pace: pace, note: a.name||'' };
+  state.completed[key] = true; // permanent - can't be unchecked
+  recalcAdjustments(wi);
+  saveState();
+  syncRun(wi, ri);
+  renderAll();
+  switchTab('today');
+}
+
+// ── Boot ──────────────────────────────────────────────────────
+loadSettings();
+loadState();
+initSupabase();
+checkAuth();
+handleStravaCallback();
+</script>
+</body>
+</html>
