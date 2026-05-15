@@ -1257,12 +1257,29 @@ function connectStrava() {
 }
 function disconnectStrava() { localStorage.removeItem('strava_token'); renderStats(); }
 
-function saveManualStravaToken() {
-  var token = document.getElementById('strava-manual-token').value.trim();
-  if (!token) return;
-  localStorage.setItem('strava_token', JSON.stringify({ access_token: token, expires_at: Date.now()/1000 + 21600 }));
-  renderStrava();
-  renderStats();
+async function exchangeStravaCode() {
+  var raw = document.getElementById('strava-auth-code').value.trim();
+  // Accept a full URL or just the bare code
+  var m = raw.match(/[?&]code=([^&]+)/);
+  var code = m ? m[1] : raw;
+  if (!code) return;
+  var btn = document.querySelector('#tab-strava .btn-strava');
+  var orig = btn.innerHTML; btn.textContent = 'Connecting…'; btn.disabled = true;
+  var res = await fetch('https://www.strava.com/oauth/token', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ client_id:STRAVA_CLIENT_ID, client_secret:STRAVA_CLIENT_SECRET,
+      code:code, grant_type:'authorization_code' })
+  });
+  var d = await res.json();
+  if (d.access_token) {
+    localStorage.setItem('strava_token', JSON.stringify(d));
+    renderStrava(); renderStats();
+  } else {
+    btn.innerHTML = orig; btn.disabled = false;
+    var inp = document.getElementById('strava-auth-code');
+    if (inp) inp.style.borderColor = '#F0997B';
+    alert('Connection failed: ' + (d.message||JSON.stringify(d)) + '\n\nMake sure you copied the full code from the URL bar.');
+  }
 }
 
 async function handleStravaCallback() {
@@ -1327,21 +1344,24 @@ async function renderStrava() {
   var el = document.getElementById('tab-strava');
   if (!stravaConnected()) {
     if (location.protocol === 'file:') {
+      var authUrl = 'https://www.strava.com/oauth/authorize?client_id='+STRAVA_CLIENT_ID
+        +'&redirect_uri='+encodeURIComponent('https://emmahristov.github.io/marathonapp')
+        +'&response_type=code&approval_prompt=force&scope=activity:read_all';
       el.innerHTML = '<div class="card">'
         +'<div class="section-label">Connect Strava</div>'
-        +'<div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.65">'
-        +'Strava OAuth requires a web server, so here\'s a one-step workaround:<br><br>'
-        +'1. Go to <strong>strava.com/settings/api</strong><br>'
-        +'2. Copy the <strong>Your Access Token</strong> value<br>'
-        +'3. Paste it below and tap Connect'
+        +'<div style="font-size:13px;line-height:1.75;margin-bottom:16px;">'
+        +'<strong>Step 1</strong> — <a href="'+authUrl+'" target="_blank" style="color:#FC4C02;font-weight:600;">Authorize on Strava ↗</a>'
         +'</div>'
-        +'<div class="field-group"><div class="field-label">Access Token</div>'
-        +'<input class="field-input" id="strava-manual-token" placeholder="Paste token here…" autocomplete="off">'
+        +'<div style="font-size:13px;color:var(--muted);line-height:1.65;margin-bottom:16px;">'
+        +'After authorizing, Strava redirects you to a page with a URL like <span style="font-family:monospace;font-size:12px;background:#f0f0ed;padding:1px 5px;border-radius:4px;">…?code=abc123…</span>. '
+        +'Copy that full URL (or just the code value) and paste it below.'
         +'</div>'
-        +'<button class="btn-strava" onclick="saveManualStravaToken()" style="margin:0">'
+        +'<div class="field-group"><div class="field-label">Code from URL</div>'
+        +'<input class="field-input" id="strava-auth-code" placeholder="Paste the URL or just the code= value" autocomplete="off">'
+        +'</div>'
+        +'<button class="btn-strava" onclick="exchangeStravaCode()" style="margin:0">'
         +'<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>'
         +'Connect</button>'
-        +'<div style="font-size:11px;color:var(--muted);margin-top:10px;">Token expires every 6 hours — just paste a fresh one when needed.</div>'
         +'</div>';
       return;
     }
