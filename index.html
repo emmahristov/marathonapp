@@ -1449,7 +1449,7 @@ async function renderStrava() {
     var pm = Math.floor(spm/60), ps = Math.round(spm%60);
     var pace = pm+':'+(ps<10?'0':'')+ps;
     var dateStr = new Date(a.start_date_local).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-    return '<div style="display:flex;align-items:center;gap:12px;padding:11px 0;'+(isLast?'':'border-bottom:1px solid var(--border);">')
+    return '<div style="display:flex;align-items:center;gap:12px;padding:11px 0;'+(isLast?'':' border-bottom:1px solid var(--border)')+'">'
       +'<div style="flex:1;min-width:0;">'
       +'<div style="font-size:13px;font-weight:600;">'+miles+' mi · '+pace+'/mi</div>'
       +'<div style="font-size:12px;color:var(--muted);margin-top:2px;">'+dateStr+' · '+a.name+'</div>'
