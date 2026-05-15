@@ -1433,30 +1433,59 @@ async function renderStrava() {
     return;
   }
 
-  var html = '<div class="card"><div class="section-label">Recent runs</div>';
-  stravaActs.forEach(function(a, idx) {
+  // Group runs by training week
+  var byWeek = {}, outside = [];
+  stravaActs.forEach(function(a) {
+    var d = new Date(a.start_date_local);
+    var wi = Math.floor((d - getPlanStart()) / (7*86400000));
+    if (wi >= 0 && wi < 26) { if (!byWeek[wi]) byWeek[wi]=[]; byWeek[wi].push(a); }
+    else outside.push(a);
+  });
+
+  function actRow(a, isLast) {
+    var actIdx = stravaActs.indexOf(a);
     var miles = Math.round((a.distance/1609.34)*100)/100;
     var spm = a.moving_time/(a.distance/1609.34);
     var pm = Math.floor(spm/60), ps = Math.round(spm%60);
     var pace = pm+':'+(ps<10?'0':'')+ps;
-    var d = new Date(a.start_date_local);
-    var dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric',weekday:'short'});
-    html += '<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);">'
+    var dateStr = new Date(a.start_date_local).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    return '<div style="display:flex;align-items:center;gap:12px;padding:11px 0;'+(isLast?'':'border-bottom:1px solid var(--border);">')
       +'<div style="flex:1;min-width:0;">'
       +'<div style="font-size:13px;font-weight:600;">'+miles+' mi · '+pace+'/mi</div>'
       +'<div style="font-size:12px;color:var(--muted);margin-top:2px;">'+dateStr+' · '+a.name+'</div>'
       +'</div>'
-      +'<button onclick="openRunPicker('+idx+')" style="flex-shrink:0;padding:7px 13px;background:#FC4C02;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Log →</button>'
+      +'<button onclick="openRunPicker('+actIdx+')" style="flex-shrink:0;padding:7px 13px;background:#FC4C02;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">Log →</button>'
       +'</div>';
+  }
+
+  var html = '';
+  Object.keys(byWeek).map(Number).sort(function(a,b){return b-a;}).forEach(function(wi) {
+    var wk = wks[wi], col = PC[wk[2]], light = PL[wk[2]], acts = byWeek[wi];
+    html += '<div class="card">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+      +'<div><div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--muted);margin-bottom:4px;">Week '+wk[0]+' · '+wkDateStr(wi)+'</div>'
+      +'<span class="phase-chip" style="background:'+light+';color:'+col+'">'+PN[wk[2]]+'</span></div>'
+      +'<div style="font-size:12px;color:var(--muted);">'+acts.length+' run'+(acts.length!==1?'s':'')+'</div>'
+      +'</div>';
+    acts.forEach(function(a,i){ html += actRow(a, i===acts.length-1); });
+    html += '</div>';
   });
-  html += '</div>';
-  el.innerHTML = html;
+
+  if (outside.length) {
+    html += '<div class="card"><div class="section-label">Outside plan</div>';
+    outside.forEach(function(a,i){ html += actRow(a, i===outside.length-1); });
+    html += '</div>';
+  }
+
+  el.innerHTML = html || '<div class="card center-card"><div style="font-size:13px;color:var(--muted);">No runs found in training plan window.</div></div>';
 }
 
 var pickerOverlay = null;
 function openRunPicker(actIdx) {
   pendingStravaAct = stravaActs[actIdx];
-  var wi = currentWeekIdx(); if (wi < 0) wi = 0;
+  var runDate = new Date(pendingStravaAct.start_date_local);
+  var wi = Math.floor((runDate - getPlanStart()) / (7*86400000));
+  if (wi < 0 || wi >= 26) wi = Math.max(0, currentWeekIdx());
 
   var html = '<div id="picker-overlay" onclick="closeRunPicker()" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:150;backdrop-filter:blur(2px);"></div>'
     +'<div id="picker-sheet" style="position:fixed;bottom:0;left:0;right:0;background:var(--card);border-radius:20px 20px 0 0;padding:20px 20px calc(24px + env(safe-area-inset-bottom,0px));z-index:151;max-width:520px;margin:0 auto;">'
