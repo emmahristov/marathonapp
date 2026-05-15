@@ -1488,20 +1488,21 @@ function openRunPicker(actIdx) {
   if (wi < 0 || wi >= 26) wi = Math.max(0, currentWeekIdx());
 
   var html = '<div id="picker-overlay" onclick="closeRunPicker()" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:150;backdrop-filter:blur(2px);"></div>'
-    +'<div id="picker-sheet" style="position:fixed;bottom:0;left:0;right:0;background:var(--card);border-radius:20px 20px 0 0;padding:20px 20px calc(24px + env(safe-area-inset-bottom,0px));z-index:151;max-width:520px;margin:0 auto;">'
+    +'<div id="picker-sheet" style="position:fixed;bottom:0;left:0;right:0;background:var(--card);border-radius:20px 20px 0 0;padding:20px 20px calc(24px + env(safe-area-inset-bottom,0px));z-index:151;max-width:520px;margin:0 auto;max-height:85vh;overflow-y:auto;">'
     +'<div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 16px;"></div>'
     +'<div style="font-size:15px;font-weight:600;margin-bottom:4px;">Which training run is this?</div>'
     +'<div style="font-size:12px;color:var(--muted);margin-bottom:16px;">'
     +Math.round((pendingStravaAct.distance/1609.34)*10)/10+' mi · '+new Date(pendingStravaAct.start_date_local).toLocaleDateString('en-US',{month:'short',day:'numeric'})
     +'</div>';
 
-  // Show surrounding weeks
-  for (var w = Math.max(0,wi-1); w <= Math.min(25,wi+1); w++) {
+  for (var w = 0; w < 26; w++) {
     var wk = wks[w];
-    html += '<div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;margin:10px 0 6px;">Week '+wk[0]+' · '+wk[1]+'</div>';
+    var isMatch = w === wi;
+    var col = PC[wk[2]];
+    html += '<div id="picker-wk-'+w+'" style="font-size:11px;font-weight:600;color:'+(isMatch?col:'var(--muted)')+';text-transform:uppercase;letter-spacing:0.6px;margin:14px 0 6px;">Week '+wk[0]+' · '+wkDateStr(w)+(isMatch?' ← this week':'')+'</div>';
     wk[4].forEach(function(run, ri) {
       var done = isCompleted(w, ri);
-      html += '<div onclick="assignStravaToRun('+w+','+ri+')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:'+(done?'#f5f5f3':'var(--bg)')+';margin-bottom:6px;cursor:pointer;border:1px solid var(--border);">'
+      html += '<div onclick="assignStravaToRun('+w+','+ri+')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:'+(done?'#f5f5f3':'var(--bg)')+';margin-bottom:6px;cursor:pointer;border:1px solid '+(isMatch?col+'33':'var(--border)')+'">'
         +'<div style="width:8px;height:8px;border-radius:50%;background:'+TC[run[1]]+';flex-shrink:0;"></div>'
         +'<div style="flex:1;font-size:13px;">'+run[0]+' mi · '+run[2].slice(0,40)+'</div>'
         +(done?'<div style="font-size:11px;color:var(--muted);">✓ done</div>':'')
@@ -1515,6 +1516,12 @@ function openRunPicker(actIdx) {
   wrap.innerHTML = html;
   document.body.appendChild(wrap);
   pickerOverlay = wrap;
+
+  setTimeout(function() {
+    var wkEl = document.getElementById('picker-wk-'+wi);
+    var sheet = document.getElementById('picker-sheet');
+    if (wkEl && sheet) sheet.scrollTop = Math.max(0, wkEl.offsetTop - 72);
+  }, 50);
 }
 
 function closeRunPicker() {
