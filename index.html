@@ -363,6 +363,36 @@
   </nav>
 </div>
 
+<!-- Log sheet -->
+<div class="overlay" id="overlay" onclick="closeLog()"></div>
+<div class="sheet" id="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title" id="sheet-title"></div>
+  <button class="btn-strava" id="strava-import-btn" onclick="stravaImport()">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+    Import from Strava
+  </button>
+  <div class="field-row">
+    <div>
+      <div class="field-label">Miles</div>
+      <input class="field-input" id="log-miles" type="number" step="0.1" placeholder="5.2" inputmode="decimal">
+    </div>
+    <div>
+      <div class="field-label">Pace /mi</div>
+      <input class="field-input" id="log-pace" type="text" placeholder="9:30">
+    </div>
+  </div>
+  <div class="field-group">
+    <div class="field-label">Note</div>
+    <input class="field-input" id="log-note" type="text" placeholder="How did it feel?">
+  </div>
+  <div class="sheet-btns">
+    <button id="btn-clear" class="btn-clear" onclick="clearLog()" style="display:none">Clear</button>
+    <button class="btn-cancel" onclick="closeLog()">Cancel</button>
+    <button class="btn-save" onclick="saveLog()">Save</button>
+  </div>
+</div>
+
 <script>
 // ── Constants ─────────────────────────────────────────────────
 var PC  = ['#5DCAA5','#85B7EB','#F0997B','#EF9F27'];
@@ -501,10 +531,11 @@ function runRow(wi,ri,showDay,highlight) {
   var logBadge=log?'<div class="log-badge">'
     +(log.miles?log.miles+' mi':'')+(log.miles&&log.pace?' · ':'')+( log.pace?log.pace+'/mi':'')
     +(log.note?' · '+log.note.slice(0,22)+(log.note.length>22?'…':''):'')+'</div>':'';
+  var logBtn = isRace ? '' : '<button onclick="event.stopPropagation();openLog('+wi+','+ri+')" class="log-btn'+(done?' logged':'')+'" title="'+(done?'Edit log':'Log run')+'">'+(done?'✓':'+')+'</button>';
   return '<div class="run-item'+(highlight?' hi':'')+'"'+(highlight?' style="background:'+PL[wks[wi][2]]+';"':'')+'>'
     +'<div class="run-dot" style="background:'+TC[run[1]]+';'+dotSize+'"></div>'
     +'<div class="run-info"><div class="run-mi">'+mi+' mi'+(adjTag||'')+'</div><div class="run-desc">'+desc+'</div>'+logBadge+'</div>'
-    +(done?'<div style="color:#5DCAA5;font-size:18px;flex-shrink:0;">✓</div>':'')
+    +logBtn
     +'</div>';
 }
 
@@ -959,11 +990,16 @@ var currentUserName = '';
 function initSupabase() {
   sb = supabase.createClient(SUPA_URL, SUPA_KEY);
   sb.auth.onAuthStateChange(function(event, session) {
-    if (event === 'SIGNED_OUT') { showAuth(); }
+    if (event === 'SIGNED_OUT') {
+      currentUser = null; currentUserName = '';
+      updateUserPill();
+    }
   });
 }
 
 async function checkAuth() {
+  // Always show app immediately from local data
+  showApp();
   var res = await sb.auth.getSession();
   var session = res.data.session;
   if (session) {
@@ -971,18 +1007,15 @@ async function checkAuth() {
     var meta = (session.user.user_metadata)||{};
     if (meta.goalTime) { settings.goalTime = meta.goalTime; saveSettings(); }
     if (meta.raceDate) { settings.raceDate = meta.raceDate; saveSettings(); }
-    showApp();
-    loadProfile().then(function() { updateUserPill(); });
+    loadProfile().then(function() { updateUserPill(); renderAll(); });
     loadFromSupabase().then(function() { renderAll(); });
   } else {
-    showAuth();
+    updateUserPill(); // show sign-in button in header
   }
 }
 
 function showAuth() {
   document.getElementById('auth-screen').classList.remove('hidden');
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('user-pill').style.display = 'none';
 }
 function showApp() {
   document.getElementById('auth-screen').classList.add('hidden');
@@ -1001,10 +1034,17 @@ function updateUserPill() {
   var pill = document.getElementById('user-pill');
   var av = document.getElementById('user-avatar');
   var nl = document.getElementById('user-name-label');
-  if (!currentUser) { pill.style.display='none'; return; }
+  if (!currentUser) {
+    av.textContent = '→';
+    nl.textContent = 'Sign in';
+    pill.onclick = showAuth;
+    pill.style.display = 'flex';
+    return;
+  }
   var initials = currentUserName.split(' ').map(function(n){return n[0]||'';}).join('').toUpperCase().slice(0,2)||'?';
   av.textContent = initials;
   nl.textContent = currentUserName.split(' ')[0];
+  pill.onclick = doSignOut;
   pill.style.display = 'flex';
 }
 
@@ -1014,7 +1054,8 @@ async function doSignOut() {
   currentUser = null; currentUserName = '';
   state = { completed:{}, expandedWeek:-1, logs:{}, adjusted:{} };
   saveState();
-  showAuth();
+  updateUserPill();
+  renderAll();
 }
 
 // ── Auth form ─────────────────────────────────────────────────
@@ -1209,11 +1250,20 @@ async function refreshStravaIfNeeded() {
 }
 
 function connectStrava() {
+  if (location.protocol === 'file:') { switchTab('strava'); return; }
   window.location='https://www.strava.com/oauth/authorize?client_id='+STRAVA_CLIENT_ID
     +'&redirect_uri='+encodeURIComponent(STRAVA_REDIRECT)
     +'&response_type=code&approval_prompt=force&scope=read,activity:read_all';
 }
 function disconnectStrava() { localStorage.removeItem('strava_token'); renderStats(); }
+
+function saveManualStravaToken() {
+  var token = document.getElementById('strava-manual-token').value.trim();
+  if (!token) return;
+  localStorage.setItem('strava_token', JSON.stringify({ access_token: token, expires_at: Date.now()/1000 + 21600 }));
+  renderStrava();
+  renderStats();
+}
 
 async function handleStravaCallback() {
   var params=new URLSearchParams(location.search);
@@ -1276,6 +1326,25 @@ var pendingStravaAct = null;
 async function renderStrava() {
   var el = document.getElementById('tab-strava');
   if (!stravaConnected()) {
+    if (location.protocol === 'file:') {
+      el.innerHTML = '<div class="card">'
+        +'<div class="section-label">Connect Strava</div>'
+        +'<div style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.65">'
+        +'Strava OAuth requires a web server, so here\'s a one-step workaround:<br><br>'
+        +'1. Go to <strong>strava.com/settings/api</strong><br>'
+        +'2. Copy the <strong>Your Access Token</strong> value<br>'
+        +'3. Paste it below and tap Connect'
+        +'</div>'
+        +'<div class="field-group"><div class="field-label">Access Token</div>'
+        +'<input class="field-input" id="strava-manual-token" placeholder="Paste token here…" autocomplete="off">'
+        +'</div>'
+        +'<button class="btn-strava" onclick="saveManualStravaToken()" style="margin:0">'
+        +'<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>'
+        +'Connect</button>'
+        +'<div style="font-size:11px;color:var(--muted);margin-top:10px;">Token expires every 6 hours — just paste a fresh one when needed.</div>'
+        +'</div>';
+      return;
+    }
     el.innerHTML = '<div class="card" style="text-align:center;padding:36px 20px;">'
       +'<div style="font-size:48px;margin-bottom:12px">🏅</div>'
       +'<div style="font-size:17px;font-weight:600;margin-bottom:6px;">Connect Strava</div>'
